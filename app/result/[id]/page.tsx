@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Copy, Check, ChevronLeft, Share2, MoreHorizontal, Save, Loader2, AlertCircle } from "lucide-react";
+import { Copy, Check, ChevronLeft, Share2, MoreHorizontal, Save, Loader2, AlertCircle, Search } from "lucide-react";
 import { PhotoAnalysisItem } from "@/types";
 
 export default function ResultPage() {
@@ -15,8 +15,10 @@ export default function ResultPage() {
   const [photoDetails, setPhotoDetails] = useState<PhotoAnalysisItem[]>([]);
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [content, setContent] = useState("");
+  const [seoKeywords, setSeoKeywords] = useState<string[]>([]);
   
   const [copied, setCopied] = useState(false);
+  const [keywordCopied, setKeywordCopied] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -30,6 +32,9 @@ export default function ResultPage() {
         setContent(data.generated_content);
         if (data.analysis_json?.photoDetails) {
           setPhotoDetails(data.analysis_json.photoDetails);
+        }
+        if (data.analysis_json?.seoKeywords) {
+          setSeoKeywords(data.analysis_json.seoKeywords);
         }
       }
     }
@@ -85,6 +90,13 @@ export default function ResultPage() {
       setTimeout(() => setCopied(false), 2000);
     }).catch(err => {
       console.error("복사 실패:", err);
+    });
+  };
+
+  const handleCopyKeyword = (keyword: string) => {
+    navigator.clipboard.writeText(keyword).then(() => {
+      setKeywordCopied(keyword);
+      setTimeout(() => setKeywordCopied(null), 2000);
     });
   };
 
@@ -231,6 +243,35 @@ export default function ResultPage() {
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   {copied ? "복사 완료!" : "전체 내용 복사하기"}
                 </button>
+              </div>
+
+              {/* SEO 키워드 섹션 추가 */}
+              <div className="pt-6 border-t border-slate-50">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Search className="w-3 h-3" />
+                  추천 SEO 키워드
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {seoKeywords.length > 0 ? seoKeywords.map((keyword, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleCopyKeyword(keyword)}
+                      className={`text-[12px] px-2.5 py-1.5 rounded-full border transition-all flex items-center gap-1.5 ${
+                        keywordCopied === keyword 
+                          ? "bg-green-50 border-green-200 text-green-600" 
+                          : "bg-slate-50 border-slate-100 text-slate-600 hover:border-blue-200 hover:text-blue-500"
+                      }`}
+                    >
+                      {keywordCopied === keyword ? <Check className="w-3 h-3" /> : <Search className="w-3 h-3 opacity-30" />}
+                      {keyword}
+                    </button>
+                  )) : (
+                    <p className="text-[12px] text-slate-400 italic">추천 키워드가 없습니다.</p>
+                  )}
+                </div>
+                <p className="mt-3 text-[11px] text-slate-400 leading-normal">
+                  * 클릭하여 복사 후 본문에 활용하세요.
+                </p>
               </div>
 
               <div className="pt-6 border-t border-slate-50">

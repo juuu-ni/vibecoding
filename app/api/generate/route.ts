@@ -5,9 +5,19 @@ import { supabase } from '@/lib/supabase';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { imageUrls, storeName, locationText, userNotes, toneStyle, highlightPoints, customToneSample } = body;
+    const { 
+      imageUrls, 
+      storeName, 
+      locationText, 
+      userNotes, 
+      toneStyle, 
+      highlightPoints, 
+      customToneSample,
+      storeAddress,
+      storePhone 
+    } = body;
 
-    // 1단계: 사진 분석
+    // 1단계: 사진 분석 (최대 10장)
     const analysisResponse = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -16,7 +26,7 @@ export async function POST(req: Request) {
           role: "user",
           content: [
             { type: "text", text: "사진들을 보고 느낌 위주로 분석해줘." },
-            ...imageUrls.slice(0, 5).map((url: string) => ({ 
+            ...imageUrls.slice(0, 10).map((url: string) => ({ 
               type: "image_url", 
               image_url: { url } 
             }))
@@ -51,7 +61,10 @@ export async function POST(req: Request) {
       userNotes, 
       toneStyle: customStyleInstructions ? "사용자 맞춤 문체" : toneStyle, 
       highlightPoints,
-      customStyleInstructions 
+      customStyleInstructions,
+      customToneSample: toneStyle === "나만의 문체(샘플 입력)" ? customToneSample : null,
+      storeAddress,
+      storePhone
     };
     
     const reviewResponse = await openai.chat.completions.create({
@@ -65,7 +78,7 @@ export async function POST(req: Request) {
 
     const result = JSON.parse(reviewResponse.choices[0].message.content || "{}");
 
-    // 3단계: DB에 확실하게 저장 (이 부분이 히스토리의 핵심)
+    // 4단계: DB에 확실하게 저장
     const { data: insertedData, error: insertError } = await supabase
       .from('reviews')
       .insert([{
@@ -73,7 +86,12 @@ export async function POST(req: Request) {
         location_text: locationText,
         user_notes: userNotes,
         image_urls: imageUrls,
-        analysis_json: analysis,
+        analysis_json: {
+          ...analysis,
+          seoKeywords: result.seoKeywords || [],
+          storeAddress,
+          storePhone
+        },
         generated_titles: result.titles,
         generated_content: result.content,
         generated_hashtags: result.hashtags,

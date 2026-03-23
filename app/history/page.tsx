@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, ChevronRight, FileText, Clock } from "lucide-react";
+import { Calendar, ChevronRight, FileText, Clock, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function HistoryPage() {
-  const [reviews, setReviews] = useState([]);
+  const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -17,6 +18,31 @@ export default function HistoryPage() {
     }
     fetchHistory();
   }, []);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault(); // 상세 페이지 이동 방지
+    e.stopPropagation();
+
+    if (!confirm("정말 이 초안을 삭제하시겠습니까?")) return;
+
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/reviews/${id}`, {
+        method: 'DELETE',
+      });
+      const result = await res.json();
+      if (result.success) {
+        setReviews(prev => prev.filter(r => r.id !== id));
+      } else {
+        alert("삭제 중 오류가 발생했습니다.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("삭제 중 오류가 발생했습니다.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
@@ -79,7 +105,21 @@ export default function HistoryPage() {
                     {review.store_name} · {review.location_text}
                   </p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => handleDelete(e, review.id)}
+                    className="p-3 text-slate-300 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100 active:scale-95"
+                    disabled={deletingId === review.id}
+                  >
+                    {deletingId === review.id ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-5 h-5" />
+                    )}
+                  </button>
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                </div>
               </Link>
             ))}
           </div>
