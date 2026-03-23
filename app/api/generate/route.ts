@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { imageUrls, storeName, locationText, userNotes, toneStyle, highlightPoints } = body;
+    const { imageUrls, storeName, locationText, userNotes, toneStyle, highlightPoints, customToneSample } = body;
 
     // 1단계: 사진 분석
     const analysisResponse = await openai.chat.completions.create({
@@ -28,8 +28,32 @@ export async function POST(req: Request) {
 
     const analysis = JSON.parse(analysisResponse.choices[0].message.content || "{}");
 
-    // 2단계: 리뷰 본문 생성 (사람 문체 적용)
-    const inputData = { storeName, locationText, userNotes, toneStyle, highlightPoints };
+    // 2단계: 문체 분석 (나만의 문체 요청 시)
+    let customStyleInstructions = "";
+    if (customToneSample) {
+      const styleAnalysisResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { 
+            role: "system", 
+            content: "너는 문체 분석 전문가다. 제공된 텍스트의 말투, 문장 구조, 이모지 사용 습관, 서술 방식 등을 분석하여, 다른 글을 쓸 때 똑같이 흉내 낼 수 있도록 3-4가지 핵심 규칙을 요약하라." 
+          },
+          { role: "user", content: customToneSample }
+        ],
+      });
+      customStyleInstructions = styleAnalysisResponse.choices[0].message.content || "";
+    }
+
+    // 3단계: 리뷰 본문 생성 (사람 문체 적용)
+    const inputData = { 
+      storeName, 
+      locationText, 
+      userNotes, 
+      toneStyle: customStyleInstructions ? "사용자 맞춤 문체" : toneStyle, 
+      highlightPoints,
+      customStyleInstructions 
+    };
+    
     const reviewResponse = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [

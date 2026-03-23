@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, ChevronRight } from "lucide-react";
+import { Calendar, ChevronRight, FileText, Clock } from "lucide-react";
+import Link from "next/link";
 
 export default function HistoryPage() {
   const [reviews, setReviews] = useState([]);
@@ -17,42 +18,71 @@ export default function HistoryPage() {
     fetchHistory();
   }, []);
 
-  if (loading) return <div className="max-w-3xl mx-auto p-20 text-center text-gray-500">불러오는 중...</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="text-center space-y-4">
+        <div className="w-10 h-10 border-4 border-slate-100 border-t-blue-500 rounded-full animate-spin mx-auto" />
+        <p className="text-slate-400 text-sm font-medium">초안 목록을 불러오는 중...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <main className="max-w-4xl mx-auto p-6 py-12">
-      <h1 className="text-3xl font-bold mb-8">생성 히스토리</h1>
+    <main className="max-w-screen-md mx-auto px-6 py-12 md:py-20">
+      <header className="mb-12">
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+          <FileText className="w-6 h-6 text-blue-500" />
+          내 블로그 초안함
+        </h1>
+        <p className="text-slate-500 mt-2 text-sm font-medium">AI가 작성한 블로그 리뷰 초안들이 보관되어 있습니다.</p>
+      </header>
       
-      <div className="grid gap-4">
+      <div className="space-y-1">
         {reviews.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border text-gray-400">
-            아직 생성된 리뷰가 없습니다.
+          <div className="text-center py-32 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+            <p className="text-slate-400 font-medium">아직 생성된 초안이 없습니다.</p>
+            <Link href="/generate" className="text-blue-500 font-bold text-sm mt-4 inline-block hover:underline">
+              첫 번째 리뷰 작성하기
+            </Link>
           </div>
         ) : (
-          reviews.map((review: any) => (
-            <a 
-              key={review.id} 
-              href={`/result/${review.id}`}
-              className="bg-white p-6 rounded-2xl border hover:border-blue-500 transition flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-6">
-                <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                  {review.image_urls?.[0] && (
-                    <img src={review.image_urls[0]} className="w-full h-full object-cover" alt="store" />
+          <div className="divide-y divide-slate-100">
+            {reviews.map((review: any) => (
+              <Link 
+                key={review.id} 
+                href={`/result/${review.id}`}
+                className="group flex items-center gap-6 py-8 hover:bg-slate-50/50 transition-all rounded-xl px-4 -mx-4"
+              >
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 shadow-sm">
+                  {review.image_urls?.[0] ? (
+                    <img src={review.image_urls[0]} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="store" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-300">
+                      <FileText className="w-8 h-8" />
+                    </div>
                   )}
                 </div>
-                <div>
-                  <h3 className="font-bold text-xl text-gray-900">{review.store_name}</h3>
-                  <p className="text-gray-500 text-sm mt-1">{review.location_text}</p>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(review.created_at).toLocaleDateString()}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded">
+                      Draft
+                    </span>
+                    <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                      <Clock className="w-3 h-3" />
+                      {new Date(review.created_at).toLocaleDateString()}
+                    </span>
                   </div>
+                  <h3 className="font-bold text-lg md:text-xl text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                    {review.generated_titles?.[0] || review.store_name}
+                  </h3>
+                  <p className="text-slate-500 text-sm mt-1 flex items-center gap-1.5 font-medium">
+                    {review.store_name} · {review.location_text}
+                  </p>
                 </div>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-300 group-hover:text-blue-500 transition" />
-            </a>
-          ))
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+              </Link>
+            ))}
+          </div>
         )}
       </div>
     </main>

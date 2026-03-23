@@ -1,170 +1,265 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Copy, Check, Info, Layout, AlertTriangle } from "lucide-react";
+import { Copy, Check, ChevronLeft, Share2, MoreHorizontal, Save, Loader2, AlertCircle } from "lucide-react";
 import { PhotoAnalysisItem } from "@/types";
 
 export default function ResultPage() {
   const { id } = useParams();
+  const router = useRouter();
+  
   const [review, setReview] = useState<any>(null);
+  const [title, setTitle] = useState("");
+  const [photoDetails, setPhotoDetails] = useState<PhotoAnalysisItem[]>([]);
+  const [hashtags, setHashtags] = useState<string[]>([]);
   const [content, setContent] = useState("");
+  
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     async function fetchReview() {
       const { data } = await supabase.from('reviews').select('*').eq('id', id).single();
       if (data) {
         setReview(data);
+        setTitle(data.generated_titles[0]);
+        setHashtags(data.generated_hashtags || []);
         setContent(data.generated_content);
+        if (data.analysis_json?.photoDetails) {
+          setPhotoDetails(data.analysis_json.photoDetails);
+        }
       }
     }
     fetchReview();
   }, [id]);
 
+  // 자동 높이 조절 텍스트 영역 핸들러
+  const handleTextareaChange = (index: number, value: string) => {
+    const updatedDetails = [...photoDetails];
+    updatedDetails[index].caption = value;
+    setPhotoDetails(updatedDetails);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // 제목 배열 업데이트 (첫 번째 제목을 현재 수정된 제목으로)
+      const updatedTitles = [...review.generated_titles];
+      updatedTitles[0] = title;
+
+      // 전체 텍스트 내용도 업데이트된 캡션들로 재구성 (선택 사항이나 정합성을 위해 권장)
+      let updatedFullContent = photoDetails.map((p, i) => `[사진${i+1}]\n${p.caption}`).join('\n\n');
+
+      const { error } = await supabase
+        .from('reviews')
+        .update({
+          generated_titles: updatedTitles,
+          generated_content: updatedFullContent,
+          analysis_json: { ...review.analysis_json, photoDetails }
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err) {
+      console.error("저장 실패:", err);
+      alert("변경사항 저장 중 오류가 발생했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCopy = () => {
-    if (!content) return alert("복사할 내용이 없습니다.");
-    
-    // AI가 생성한 실제 텍스트 내용을 클립보드에 복사
-    navigator.clipboard.writeText(content).then(() => {
+    // 현재 수정된 상태의 전체 텍스트 구성
+    const currentFullContent = photoDetails.length > 0 
+      ? photoDetails.map((p, i) => `[사진${i+1}]\n${p.caption}`).join('\n\n')
+      : content;
+
+    navigator.clipboard.writeText(currentFullContent).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }).catch(err => {
       console.error("복사 실패:", err);
-      alert("복사 중 오류가 발생했습니다.");
     });
   };
 
-  // 이미지별 분석 결과를 매칭하여 렌더링하는 함수
   const renderStructuredContent = () => {
-    if (!review?.analysis_json?.photoDetails || !review?.image_urls) {
-      return <p className="text-slate-500 whitespace-pre-wrap leading-relaxed">{content}</p>;
-    }
-
-    const { photoDetails } = review.analysis_json;
-    const { image_urls } = review;
-
-    return photoDetails.map((item: PhotoAnalysisItem, idx: number) => {
-      const imageUrl = image_urls[item.imageIndex - 1]; // 1-based index to 0-based
-      
+    if (photoDetails.length === 0) {
       return (
-        <div key={idx} className="mb-12 space-y-6">
-          {/* 이미지 렌더링 */}
-          {imageUrl && (
-            <div className="relative group overflow-hidden rounded-[2rem] border-8 border-white shadow-2xl transition-all duration-500 hover:scale-[1.02]">
-              <img src={imageUrl} className="w-full aspect-video object-cover" alt={`photo-${idx}`} />
-              <div className="absolute top-6 left-6 flex gap-2">
-                <span className="bg-black/40 backdrop-blur-lg text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-white/20">
-                  {item.sceneType}
-                </span>
-                {item.confidence < 0.8 && (
-                  <span className="bg-amber-500/80 backdrop-blur-lg text-white px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-1 border border-white/20">
-                    <AlertTriangle className="w-3 h-3" />
-                    추정됨
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {/* 설명 렌더링 (해당 이미지 아래에 배치) */}
-          <div className="px-4 space-y-3">
-            <p className="text-lg md:text-xl font-semibold leading-relaxed text-slate-800">
-              {item.caption}
-            </p>
-            {/* 시각적 요소 태그 (선택 사항) */}
-            <div className="flex flex-wrap gap-2 pt-2">
-              {item.visibleSubjects.map((sub, i) => (
-                <span key={i} className="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded">
-                  #{sub}
-                </span>
-              ))}
-            </div>
-          </div>
+        <div className="prose prose-slate max-w-none">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="w-full min-h-[400px] border-none focus:ring-0 p-0 text-slate-700 text-lg leading-relaxed resize-none outline-none"
+            placeholder="블로그 본문을 입력하세요..."
+          />
         </div>
       );
-    });
+    }
+
+    const { image_urls } = review;
+
+    return (
+      <div className="space-y-12">
+        {photoDetails.map((item, idx) => {
+          const imageUrl = image_urls[item.imageIndex - 1];
+          
+          return (
+            <div key={idx} className="space-y-6">
+              {imageUrl && (
+                <div className="relative overflow-hidden rounded-sm shadow-sm group">
+                  <img src={imageUrl} className="w-full object-cover max-h-[600px]" alt={`img-${idx}`} />
+                  <div className="absolute top-4 left-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="bg-black/40 backdrop-blur-sm text-white px-2 py-1 rounded text-[10px] font-bold">
+                      IMAGE {idx + 1}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              <div className="px-1 group relative">
+                <textarea
+                  value={item.caption}
+                  onChange={(e) => handleTextareaChange(idx, e.target.value)}
+                  rows={3}
+                  className="w-full border-none focus:ring-0 p-0 text-[17px] md:text-[18px] leading-[1.8] text-slate-800 break-keep font-normal resize-none outline-none bg-transparent overflow-hidden"
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = "auto";
+                    target.style.height = `${target.scrollHeight}px`;
+                  }}
+                  ref={(el) => {
+                    if (el) {
+                      el.style.height = "auto";
+                      el.style.height = `${el.scrollHeight}px`;
+                    }
+                  }}
+                />
+                <div className="absolute -left-4 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="w-1 h-6 bg-blue-200 rounded-full" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   if (!review) return (
-    <div className="max-w-4xl mx-auto p-20 text-center animate-pulse">
-      <div className="w-20 h-20 bg-primary-100 rounded-full mx-auto mb-6 flex items-center justify-center">
-        <Layout className="w-8 h-8 text-primary-500" />
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="text-center space-y-4">
+        <div className="w-10 h-10 border-4 border-slate-100 border-t-blue-500 rounded-full animate-spin mx-auto" />
+        <p className="text-slate-400 text-sm font-medium">초안 불러오는 중...</p>
       </div>
-      <p className="text-slate-400 font-black tracking-tight">AI 정밀 분석 결과를 구성하고 있습니다...</p>
     </div>
   );
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-12">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
-        
-        {/* 왼쪽: 포스팅 미리보기 */}
-        <div className="lg:col-span-8 space-y-12">
-          <div className="bg-white rounded-[3.5rem] p-10 md:p-16 shadow-2xl shadow-slate-200/50 border border-slate-50">
-            <div className="mb-20 text-center space-y-4">
-              <div className="inline-block px-4 py-1 bg-primary-50 text-primary-600 rounded-full text-xs font-black tracking-[0.2em] mb-4">
-                BLOG DRAFT PREVIEW
+    <div className="min-h-screen bg-[#f4f4f4]">
+      <main className="max-w-screen-xl mx-auto px-4 py-8 md:py-12">
+        <div className="flex flex-col lg:flex-row gap-8 items-start justify-center">
+          
+          <article className="w-full max-w-[780px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)] rounded-sm overflow-hidden min-h-[800px]">
+            {/* 포스트 헤더 */}
+            <div className="px-6 md:px-12 pt-12 pb-8 border-b border-slate-50 relative group">
+              <div className="mb-6 flex items-center gap-2 text-[13px] font-bold text-blue-500 uppercase tracking-wider">
+                <span>BLOG DRAFT PREVIEW</span>
+                <span className="w-1 h-1 bg-slate-200 rounded-full" />
+                <span className="text-slate-400 font-medium">Drafting Mode</span>
               </div>
-              <h1 className="text-4xl md:text-5xl font-black text-slate-900 leading-[1.15] break-keep">
-                {review.generated_titles[0]}
-              </h1>
-            </div>
-
-            <div className="space-y-4">
-              {renderStructuredContent()}
-            </div>
-
-            {/* 마무리 및 해시태그 */}
-            <div className="mt-20 pt-12 border-t border-slate-100 space-y-6">
-              <div className="flex flex-wrap gap-3">
-                {review.generated_hashtags.map((tag: string, i: number) => (
-                  <span key={i} className="text-primary-600 font-black hover:bg-primary-50 px-3 py-1 rounded-lg transition-colors cursor-pointer">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 오른쪽: 제어 도구 */}
-        <div className="lg:col-span-4">
-          <div className="sticky top-8 space-y-6">
-            <section className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-slate-300">
-              <h2 className="text-xl font-black mb-8 flex items-center gap-3">
-                <Layout className="w-6 h-6 text-primary-400" />
-                발행 준비
-              </h2>
               
-              <div className="space-y-6">
+              <input 
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full text-3xl md:text-[40px] font-bold text-slate-900 leading-[1.3] break-keep border-none focus:ring-0 p-0 outline-none bg-transparent"
+                placeholder="제목을 입력하세요..."
+              />
+
+              <div className="mt-8 flex items-center gap-3 text-slate-400 text-sm">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-300">AI</div>
+                <div className="flex flex-col">
+                  <span className="text-slate-700 font-semibold">VibeCoding AI</span>
+                  <span className="text-[12px] opacity-70">편집 중...</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 포스트 본문 */}
+            <div className="px-6 md:px-12 py-10">
+              {renderStructuredContent()}
+
+              <div className="mt-16 pt-8 border-t border-slate-50">
+                <div className="flex flex-wrap gap-2">
+                  {hashtags.map((tag, i) => (
+                    <span key={i} className="text-[14px] text-blue-500 font-medium">
+                      {tag.startsWith('#') ? tag : `#${tag}`}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          {/* 우측 도구함 */}
+          <aside className="w-full lg:w-[320px] sticky top-[80px] space-y-6">
+            <div className="bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)] rounded-sm p-6 space-y-6">
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Save className="w-4 h-4 text-blue-500" />
+                  편집 도구
+                </h3>
+                
                 <button 
-                  onClick={handleCopy}
-                  className="w-full py-5 bg-primary-600 hover:bg-primary-500 rounded-2xl font-black text-lg flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-primary-900/20"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full py-3.5 bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 rounded-md font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                 >
-                  {copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}
-                  {copied ? "복사 완료!" : "전체 복사하기"}
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4 text-green-500" /> : <Save className="w-4 h-4" />}
+                  {saving ? "저장 중..." : saveSuccess ? "저장 완료" : "변경사항 저장"}
                 </button>
 
-                <div className="space-y-4 pt-4 border-t border-slate-800">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">추천 제목 리스트</p>
+                <button 
+                  onClick={handleCopy}
+                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? "복사 완료!" : "전체 내용 복사하기"}
+                </button>
+              </div>
+
+              <div className="pt-6 border-t border-slate-50">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">다른 제목 추천</p>
+                <div className="space-y-2">
                   {review.generated_titles.slice(1).map((t: string, i: number) => (
-                    <div key={i} className="text-sm font-bold text-slate-400 p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50 hover:border-primary-500 hover:text-white transition-all cursor-pointer leading-snug">
+                    <div 
+                      key={i} 
+                      onClick={() => setTitle(t)}
+                      className="text-[13px] text-slate-600 p-3 bg-slate-50 rounded border border-transparent hover:border-blue-200 hover:bg-blue-50 transition-all cursor-pointer leading-snug break-keep"
+                    >
                       {t}
                     </div>
                   ))}
                 </div>
-
-                <div className="flex items-start gap-3 p-5 bg-white/5 rounded-2xl border border-white/10 text-slate-400 text-xs leading-relaxed">
-                  <Info className="w-5 h-5 flex-shrink-0 text-primary-400" />
-                  <p>AI가 분석한 정밀 캡션입니다. 이미지 아래에 딱 맞는 설명이 배치되어 그대로 블로그에 옮기기 좋습니다.</p>
-                </div>
               </div>
-            </section>
-          </div>
+              
+              <div className="p-4 bg-amber-50 rounded-md flex gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                <p className="text-[12px] text-amber-800 leading-relaxed font-medium">
+                  현재 <strong>편집 모드</strong>입니다. 본문을 클릭하여 내용을 자유롭게 수정하고 '저장' 버튼을 눌러주세요.
+                </p>
+              </div>
+            </div>
+          </aside>
+
         </div>
-      </div>
-    </main>
+      </main>
+      <div className="h-20" />
+    </div>
   );
 }
